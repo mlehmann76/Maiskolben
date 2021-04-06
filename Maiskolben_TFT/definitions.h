@@ -32,7 +32,9 @@
 
 //      RX          0
 //      TX          1
-#define SW_STBY     2
+//#define SW_STBY     2
+#define POWER       2
+
 #define HEATER_PWM  3
 #define SW_DOWN     4
 #define HEAT_LED    5
@@ -40,34 +42,39 @@
 #define SW_T3       7
 #define SW_T2       8
 #define SW_T1       9
+
 #define TFT_CS      10
 //      MOSI        11
-#define POWER       12 //use MISO PULLUP as switch
+//#define POWER       12 //use MISO PULLUP as switch
+#define SW_STBY     12
 //      SCK         13
 #define TEMP_SENSE  A0
-#define STBY_NO     A1
-#define BAT_C3      A2
-#define BAT_C2      A3
-#define BAT_C1      A4
+#define I_OUT       A1 //unused
+//#define BAT_C3      A2
+//#define BAT_C2      A3
+//#define VIN         A3//not supported
+//#define BAT_C1      A4
+#define TFT_RESET   A4 //comment to disable TFT_RESET
 #define TFT_DC      A5
+
 #ifdef PIN_A7
 #define CHARGEDET   A6
-#define VIN         A7
+#define STBY_NO     A7
 #endif
 
 #define kp          0.03
-#define ki          0.00001
-#define kd          0.0
+#define ki          0.0001
+#define kd          0.00
 
 #define TIME_COMPUTE_IN_MS          10
 #define TIME_MEASURE_VOLTAGE_IN_MS 200
 #define TIME_SW_POLL_IN_MS          10
 #define DELAY_BEFORE_MEASURE        10
 #define DELAY_MAIN_LOOP             10
-#define PID_SAMPLE_TIME             10
+#define PID_SAMPLE_TIME             DELAY_BEFORE_MEASURE
 
 #define ADC_TO_TEMP_GAIN             0.54 //default value if no calibration is performed
-#define ADC_TO_TEMP_OFFSET          42.8  //default value if no calibration is performed
+#define ADC_TO_TEMP_OFFSET           22/*42.8*/  //default value if no calibration is performed
 
 #define EEPROM_SET_T     8
 #define EEPROM_VERSION  10

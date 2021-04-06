@@ -10,8 +10,13 @@
  * Cut reset trace (on THT on upper layer/0R), connect STBY_NO (A1) with reset of TFT (at 4050).
  * See also readme in mechanical folder for reference.
  */
-//#define USE_TFT_RESET
+#define USE_TFT_RESET
 
+/*
+ * If using encoder for up / down uncomment this
+ */
+#define USE_ENCODER  1
+ 
 /*
  * If red is blue and blue is red change this
  * If not sure, leave commented, you will be shown a setup screen
@@ -30,7 +35,7 @@
 //#define HARDWARE_REVISION     2
 // V 3.0 and 3.1
 //#define HARDWARE_REVISION     3
-
+#define HARDWARE_REVISION       4
 /*
  * Only used for testing, do not use.
  */
@@ -64,14 +69,19 @@ uint16_t charge = 0;
 float adc_offset = ADC_TO_TEMP_OFFSET;
 float adc_gain = ADC_TO_TEMP_GAIN;
 
+enum direction { D_NONE, D_UP, D_DOWN } encoderDir;
+bool isSW_UP();
+bool isSW_DOWN();
+
 #define RGB_DISP 0x0
 #define BGR_DISP 0x2
 
-#ifdef USE_TFT_RESET
-TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS,  TFT_DC, STBY_NO);
+#if (defined(USE_TFT_RESET) && defined(TFT_RESET))
+TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS,  TFT_DC, TFT_RESET);
 #else
 TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS,  TFT_DC);
 #endif
+
 #define	BLACK   0x0000
 #define	BLUE    0x001F
 #define	RED     0xF800
@@ -172,14 +182,15 @@ void setup(void) {
 			uint16_t adc = analogRead(TEMP_SENSE);
 			Serial.println(t);
 			digitalWrite(HEATER_PWM, !digitalRead(SW_T1) | !digitalRead(SW_T2) | !digitalRead(SW_T3)/* | !digitalRead(SW_UP) | !digitalRead(SW_DOWN)*/);
-			if (!digitalRead(SW_DOWN)) {
+			
+			if (isSW_DOWN()) {
 				if (!adc) {
 					digitalWrite(HEATER_PWM, HIGH);
 				} else {
 					adc1 = adc;
 				}
 			}
-			if (!digitalRead(SW_UP)) {
+			if (isSW_UP()) {
 				if (!adc) {
 					digitalWrite(HEATER_PWM, HIGH);
 				} else {
@@ -235,13 +246,14 @@ void setup(void) {
 		tft.print("HW Revision ");
 		tft.print(revision);
 		//Allow Options to be set at startup
-		delay(100);
-		attachInterrupt(digitalPinToInterrupt(SW_STBY), optionMenu, LOW);
-		for (int i = 0; i < 10 && !menu_dismissed; i++) {
-			digitalWrite(HEAT_LED, i % 2);
-			delay(250);
-		}
-		detachInterrupt(digitalPinToInterrupt(SW_STBY));
+    const unsigned long start = millis();
+    do {
+      if (!digitalRead(SW_STBY)) {
+        optionMenu();
+        break;
+      }
+      digitalWrite(HEAT_LED, ((millis()-start) >> 8) % 2);
+    }while(((millis()-start) < 1000) && !menu_dismissed);
 	}
 	/*
 	 * lower frequency = noisier tip
@@ -293,7 +305,7 @@ void setup(void) {
 void updateRevision(void) {	
 #if (HARDWARE_REVISION > 2)
 	EEPROM.update(EEPROM_REVISION, HARDWARE_REVISION);
-	revision = 3;
+	revision = HARDWARE_REVISION;
 #else
 	if (EEPROM.read(EEPROM_VERSION) < 26 || EEPROM.read(EEPROM_REVISION) > 100) {
 		EEPROM.update(EEPROM_REVISION, 2);
@@ -305,7 +317,7 @@ void updateRevision(void) {
 }
 
 void setDisplayMode(boolean bgr) {
-	tft.colorSpace(bgr);
+	//FIXME tft.colorSpace(bgr);
 	tft.setRotation(3);
 }
 
@@ -345,7 +357,7 @@ void optionMenu(void) {
 			tft.print(">");
 			redraw = false;
 		}
-		if (!digitalRead(SW_UP)) {
+		if (isSW_UP()) {
 			tft.setCursor(0, (opt+2)*18);
 			tft.setTextColor(BLACK);
 			tft.print(">");
@@ -353,7 +365,7 @@ void optionMenu(void) {
 			while (!digitalRead(SW_UP)) delay(100);
 			redraw = true;
 		}
-		if (!digitalRead(SW_DOWN)) {
+		if (isSW_DOWN()) {
 			tft.setCursor(0, (opt+2)*18);
 			tft.setTextColor(BLACK);
 			tft.print(">");
@@ -415,8 +427,12 @@ void powerDown(void) {
 	tft.print("OFF");
 	delay(3000);
 	SPI.end();
+#ifdef USE_ENCODER
+  /* POWER is used by encoder Push button */
+#else
 	digitalWrite(POWER, LOW);
 	pinMode(POWER, OUTPUT);
+#endif
 	delay(100);
 	force_redraw = true;
 	power_down = false;
@@ -433,7 +449,7 @@ int getTemperature(void) {
 #ifdef TEST_ADC
 	Serial.println(adc);
 #endif
-	if (adc >= 900) { //Illegal value, tip not plugged in - would be around 560deg
+	if (adc >= 900) { //FIXME 900 //Illegal value, tip not plugged in - would be around 560deg
 		analogWrite(HEATER_PWM, 0);
 		if (!off)
 			setError(NO_TIP);
@@ -446,12 +462,24 @@ int getTemperature(void) {
 }
 
 void measureVoltage(void) {
+#ifdef BAT_C1
 	analogRead(BAT_C1); //Switch analog MUX before measuring
 	v_c1 = v_c1*.9+(analogRead(BAT_C1)*5/1024.0)*.1; //no divisor
+#else
+  v_c1 = 0;
+#endif
+#ifdef BAT_c2
 	analogRead(BAT_C2);
 	v_c2 = v_c2*.9+(analogRead(BAT_C2)*5/512.0)*.1; //divisor 1:1 -> /2
+#else
+  v_c2 = 0;
+#endif
+#ifdef BAT_c3
 	analogRead(BAT_C3);
 	v_c3 = v_c3*.9+(analogRead(BAT_C3)*(5.0*3.0)/1024.0)*.1; //maximum measurable is ~15V
+#else
+  v_c3 = 12;
+#endif
 	v = v_c3;
 	if (revision < 3) return;
 #ifdef VIN
@@ -546,9 +574,11 @@ void timer_sw_poll(void) {
 			cnt_but_store++;
 		}
 	}
-	boolean sw_up = !digitalRead(SW_UP);
-	boolean sw_down = !digitalRead(SW_DOWN);
+  
+	boolean sw_up = isSW_UP();
+	boolean sw_down = isSW_DOWN();
 	boolean sw_changed = (sw_up != sw_up_old) || (sw_down !=sw_down_old);
+ 
 	sw_up_old = sw_up;
 	sw_down_old = sw_down;
 	if((sw_up && sw_down) || !(sw_up || sw_down)) {
@@ -595,8 +625,8 @@ void setOff(boolean state) {
 		setError(USB_ONLY);
 	}
 	last_on_state = millis()/1000;
+	wasOff = off;//true;
 	off = state;
-	wasOff = true;
 	last_measured = cur_t;
 }
 
@@ -609,8 +639,9 @@ void printTemp(float t) {
 }
 
 void display(void) {
+  static int16_t temperature = 0;
 	if (force_redraw) tft.fillScreen(BLACK);
-	int16_t temperature = cur_t; //buffer volatile value
+	temperature = cur_t;
 	boolean yell = stby || (stby_layoff && blink);
 	tft.drawCircle(20,63,8, off?RED:yell?YELLOW:GREEN);
 	tft.drawCircle(20,63,7,off?RED:yell?YELLOW:GREEN);
@@ -708,7 +739,7 @@ void display(void) {
 	if (cur_t_old != temperature || force_redraw) {
 		tft.setCursor(36,52);
 		tft.setTextSize(3);
-		if (temperature == 999) {
+		if (temperature > 900) {
 			tft.setTextColor(RED, BLACK);
 			tft.print(F(" ERR  "));
 			tft.setCursor(44,76);
@@ -839,7 +870,11 @@ void display(void) {
 
 void compute(void) {
 #ifndef USE_TFT_RESET
+#if HARDWARE_REVISION < 4
 	setStandbyLayoff(!digitalRead(STBY_NO)); //do not measure while heater is active, potential is not neccessary == GND
+#else
+  setStandbyLayoff(analogRead(STBY_NO) < 10); 
+#endif
 #endif
 	cur_t = getTemperature();
 	if (off) {
@@ -880,6 +915,7 @@ void compute(void) {
 }
 
 void timer_isr(void) {
+  
 	if (cnt_compute >= TIME_COMPUTE_IN_MS) {
 		analogWrite(HEATER_PWM, 0); //switch off heater to let the low pass settle
 		
@@ -901,8 +937,62 @@ void timer_isr(void) {
 		cnt_measure_voltage=0;
 	}
 	cnt_measure_voltage++;
+
+#ifdef USE_ENCODER
+  static uint8_t prevEncoderState = 0;
+  static uint8_t nextEncoderState = 0;
+  static uint8_t nextEncoderStateCount = 0;
+  static const enum direction transition[][4] = {
+    {D_NONE,D_DOWN,D_UP,D_NONE},
+    {D_UP,D_NONE,D_NONE,D_DOWN},
+    {D_DOWN, D_NONE, D_NONE, D_UP},
+    {D_NONE, D_UP, D_DOWN, D_NONE}};
+  uint8_t state = encoderState();
+  if (state == nextEncoderState && state != prevEncoderState) {
+    if (++nextEncoderStateCount >= 2) {
+      if (nextEncoderState != prevEncoderState) {
+        encoderDir = transition[prevEncoderState][nextEncoderState];
+        prevEncoderState = nextEncoderState;
+        nextEncoderStateCount = 0;
+      }
+    } 
+  } else {
+    nextEncoderState = state;
+    nextEncoderStateCount = 0;
+  }
+#endif  
 }
 
+#ifdef USE_ENCODER
+uint8_t encoderState() {
+  return  (digitalRead(SW_UP) ? 0 : 2) | (digitalRead(SW_DOWN) ? 0 : 1);
+}
+
+bool isSW_UP() {
+  if(encoderDir == D_UP) {
+    encoderDir = D_NONE;
+    return true;
+  } else {
+    return false;
+  }
+}
+
+bool isSW_DOWN() {
+  if(encoderDir == D_DOWN) {
+    encoderDir = D_NONE;
+    return true;
+  } else {
+    return false;
+  }
+}
+#else
+bool isSW_UP() {
+  return !digitalRead(SW_UP);
+}
+bool isSW_DOWN() {
+  return !digitalRead(SW_DOWN);
+} 
+#endif
 void setError(error_type e) {
 	error = e;
 	setOff(true);
