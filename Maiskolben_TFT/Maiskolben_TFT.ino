@@ -4,6 +4,7 @@
 #include <EEPROM.h>
 #include "TimerOne.h"
 #include "definitions.h"
+#include "rotary.h"
 
 /*
  * If your display stays white, uncomment this.
@@ -69,7 +70,10 @@ uint16_t charge = 0;
 float adc_offset = ADC_TO_TEMP_OFFSET;
 float adc_gain = ADC_TO_TEMP_GAIN;
 
-enum direction { D_NONE, D_UP, D_DOWN } encoderDir;
+#if (defined(USE_ENCODER) && USE_ENCODER == 1)
+Rotary rotary = {SW_UP, SW_DOWN};
+#endif
+
 bool isSW_UP();
 bool isSW_DOWN();
 
@@ -334,7 +338,14 @@ void optionMenu(void) {
 	uint8_t options = 3;
 	uint8_t opt = 0;
 	boolean redraw = true;
+  unsigned long time = millis();
 	while (true) {
+#if (defined(USE_ENCODER) && USE_ENCODER == 1)
+    if (time != millis()) {
+      time = millis();
+      rotary.encoder_poll();
+    }
+#endif
 		if (redraw) {
 			tft.setCursor(0,36);
 			#ifdef SHUTOFF_ACTIVE
@@ -362,7 +373,7 @@ void optionMenu(void) {
 			tft.setTextColor(BLACK);
 			tft.print(">");
 			opt = (opt+options-1)%options;
-			while (!digitalRead(SW_UP)) delay(100);
+			//FIXME while (!digitalRead(SW_UP)) delay(100);
 			redraw = true;
 		}
 		if (isSW_DOWN()) {
@@ -370,7 +381,16 @@ void optionMenu(void) {
 			tft.setTextColor(BLACK);
 			tft.print(">");
 			opt = (opt+1)%options;
-			while (!digitalRead(SW_DOWN)) delay(100);
+			//FIXME while (!digitalRead(SW_DOWN)) delay(100);
+			redraw = true;
+		}
+    if (!digitalRead(SW_STBY)) {
+			switch (opt) {
+				case 0: autopower = autopower ? 0 : 1; break;
+				case 1: bootheat = bootheat ? 0 : 1; break;
+				case 2: fahrenheit = fahrenheit ? 0 : 1; break;
+			}
+      while (!digitalRead(SW_STBY)) delay(100);
 			redraw = true;
 		}
 		if (!digitalRead(SW_T1)) {
@@ -937,40 +957,16 @@ void timer_isr(void) {
 		cnt_measure_voltage=0;
 	}
 	cnt_measure_voltage++;
-
-#ifdef USE_ENCODER
-  static uint8_t prevEncoderState = 0;
-  static uint8_t nextEncoderState = 0;
-  static uint8_t nextEncoderStateCount = 0;
-  static const enum direction transition[][4] = {
-    {D_NONE,D_DOWN,D_UP,D_NONE},
-    {D_UP,D_NONE,D_NONE,D_DOWN},
-    {D_DOWN, D_NONE, D_NONE, D_UP},
-    {D_NONE, D_UP, D_DOWN, D_NONE}};
-  uint8_t state = encoderState();
-  if (state == nextEncoderState && state != prevEncoderState) {
-    if (++nextEncoderStateCount >= 2) {
-      if (nextEncoderState != prevEncoderState) {
-        encoderDir = transition[prevEncoderState][nextEncoderState];
-        prevEncoderState = nextEncoderState;
-        nextEncoderStateCount = 0;
-      }
-    } 
-  } else {
-    nextEncoderState = state;
-    nextEncoderStateCount = 0;
-  }
-#endif  
+#if (defined(USE_ENCODER) && USE_ENCODER == 1)
+  rotary.encoder_poll();
+#endif 
 }
 
-#ifdef USE_ENCODER
-uint8_t encoderState() {
-  return  (digitalRead(SW_UP) ? 0 : 2) | (digitalRead(SW_DOWN) ? 0 : 1);
-}
+#if (defined(USE_ENCODER) && USE_ENCODER == 1)
 
 bool isSW_UP() {
-  if(encoderDir == D_UP) {
-    encoderDir = D_NONE;
+  if(rotary.getUp() > 1) {
+    rotary.clear(2);
     return true;
   } else {
     return false;
@@ -978,8 +974,8 @@ bool isSW_UP() {
 }
 
 bool isSW_DOWN() {
-  if(encoderDir == D_DOWN) {
-    encoderDir = D_NONE;
+  if(rotary.getDown() > 1) {
+    rotary.clear(2);
     return true;
   } else {
     return false;
