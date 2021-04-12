@@ -373,7 +373,9 @@ void optionMenu(void) {
 			tft.setTextColor(BLACK);
 			tft.print(">");
 			opt = (opt+options-1)%options;
-			//FIXME while (!digitalRead(SW_UP)) delay(100);
+#if !(defined(USE_ENCODER) && USE_ENCODER == 1)
+			while (!digitalRead(SW_UP)) delay(100);
+#endif
 			redraw = true;
 		}
 		if (isSW_DOWN()) {
@@ -381,7 +383,9 @@ void optionMenu(void) {
 			tft.setTextColor(BLACK);
 			tft.print(">");
 			opt = (opt+1)%options;
-			//FIXME while (!digitalRead(SW_DOWN)) delay(100);
+#if !(defined(USE_ENCODER) && USE_ENCODER == 1)
+			while (!digitalRead(SW_DOWN)) delay(100);
+#endif
 			redraw = true;
 		}
     if (!digitalRead(SW_STBY)) {
@@ -965,29 +969,23 @@ void timer_isr(void) {
 #if (defined(USE_ENCODER) && USE_ENCODER == 1)
 
 bool isSW_UP() {
-  if(rotary.getUp() > 1) {
-    rotary.clear(2);
-    return true;
-  } else {
-    return false;
-  }
+  return rotary.isUp();
 }
 
 bool isSW_DOWN() {
-  if(rotary.getDown() > 1) {
-    rotary.clear(2);
-    return true;
-  } else {
-    return false;
-  }
+  return rotary.isDown();
 }
+
 #else
+//TODO add debouce to switches
 bool isSW_UP() {
   return !digitalRead(SW_UP);
 }
+
 bool isSW_DOWN() {
   return !digitalRead(SW_DOWN);
-} 
+}
+
 #endif
 void setError(error_type e) {
 	error = e;
